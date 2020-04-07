@@ -111,56 +111,34 @@ def build_inverted_index(docs: str) -> OrderedDict:
     
     #Close multithreading pool
     pool.close()
+
     #Return our result
     return inverted_index
 
+#This function would be a local one within process query, but due to the use of multithreading it HAS to be outside a local scope
+def build_vector(doc:str, inverted_index:dict) -> np.array:
+    """Build the vector for the given document.\n
+    @param doc - The document to build the array for.\n
+    @param inverted_index - The index to build it from."""
 
-def process_query(query: str, inverted_index: dict, docs:list) -> None:
+    temp_list = []
+    
+    #For each word in the index, append the count of that word in the document to the list
+    for word in inverted_index:
+        temp_list.append(doc.count(word))
+
+    #Turn the list into a vector
+    vector = np.array(temp_list)
+    return vector
+
+#This function would be a local one within process query, but due to the use of multithreading it HAS to be outside a local scope
+def calc_angles(relevant_docs:list, docs:list, inverted_index:dict, query:str) -> dict:
+    """Calculate the angles between the query and the given docs.\n
+    @param relevant_docs - A list of relevant document IDs\n
+    @param docs - The documents to use (list of srtings)\n
+    @param inverted_index - The inverted index for this corpus.\n
+    @param query - The query to compare to.
     """
-    Process a given query and print the results.\n
-    1 - Print the query 'Query: {query}'\n
-    2 - Print a list of the relevant documents in form '{doc1} {doc2} {etc}'\n
-    3 - For each document in the list, print '{docID} {Angle compared to the search query}'\n
-    @param query - The query to be searched: should be str.\n
-    @param inverted_index - A dict contain the inverted index for the corpus.\n
-    @param docs - The documents to search through, as a list of strings
-    """
-    def build_vector(doc:str, inverted_index:dict) -> np.array:
-        """Build the vector for the given document.\n
-        @param doc - The document to build the array for.\n
-        @param inverted_index - The index to build it from."""
-
-        temp_list = []
-        
-        #For each word in the index, append the count of that word in the document to the list
-        for word in inverted_index:
-            temp_list.append(doc.count(word))
-
-        #Turn the list into a vector
-        vector = np.array(temp_list)
-        return vector
-
-    print(f"Query: '{query}'")
-
-    #Split the query into a list of words to prevent crossover when using in operator
-    query_split = query.split()
-
-    #Use a set to store the relevant documents, to prevent any duplicates
-    #Starting set contains the ID of all documents in the docs list
-    relevant_docs = set([i for i in range(len(docs))])
-
-    #Attempt to intersection the current relevant_docs set with the set of the inverted index for the current word
-    #If it is not present in the inverted index, catch the raised NameError
-    for word in query_split:
-        try:
-            relevant_docs &= set(inverted_index[word])
-        except NameError:
-            pass
-
-    #Print the list or relevant documents in the right format
-    print("Relevant documents: '", end="")
-    #This line unpacks all the items from the list and prints them separated by whitespace.
-    print(*relevant_docs, sep=" ", end="'\n")
 
     #Build the vector for the search query
     query_vector = build_vector(query, inverted_index)
@@ -183,7 +161,74 @@ def process_query(query: str, inverted_index: dict, docs:list) -> None:
 
         #Append the angle to the list
         angle_dict[docID] = angle
+    
+    #Return the result
+    return angle_dict
 
+def process_query(query: str, inverted_index: dict, docs:list, pool:Pool) -> None:
+    """
+    Process a given query and print the results. This is intended to be called via process_queries but can be called standalone assuming you create a Pool object for it\n
+    1 - Print the query 'Query: {query}'\n
+    2 - Print a list of the relevant documents in form '{doc1} {doc2} {etc}'\n
+    3 - For each document in the list, print '{docID} {Angle compared to the search query}'\n
+    @param query - The query to be searched: should be str.\n
+    @param inverted_index - A dict contain the inverted index for the corpus.\n
+    @param docs - The documents to search through, as a list of strings\n
+    @param pool - A multhprocessing.Pool object, used to process angle calculation in parallel.
+    """
+    print(f"Query: '{query}'")
+
+    #Split the query into a list of words to prevent crossover when using in operator
+    query_split = query.split()
+
+    #Use a set to store the relevant documents, to prevent any duplicates
+    #Starting set contains the ID of all documents in the docs list
+    relevant_docs = set([i for i in range(len(docs))])
+
+    #Attempt to intersection the current relevant_docs set with the set of the inverted index for the current word
+    #If it is not present in the inverted index, catch the raised NameError
+    for word in query_split:
+        try:
+            relevant_docs &= set(inverted_index[word])
+        except NameError:
+            pass
+
+    #Print the list or relevant documents in the right format
+    print("Relevant documents: '", end="")
+    #This line unpacks all the items from the list and prints them separated by whitespace.
+    print(*relevant_docs, sep=" ", end="'\n")
+
+    #Initalise empty dict to store angles
+    angle_dict = dict()
+
+    #Results objects are stored in this results list
+    results = []
+
+    #Relevant docs must be converted to a list to allow for indexing for this step
+    relevant_docs = list(relevant_docs)
+
+    #Get cpu number
+    cpu_num = cpu_count()
+
+    for i in range(cpu_num):
+        #To ensure we get all words contained in the processes, start_index is rounded down, and end_index is rounded up
+        start_index = round((i * (len(relevant_docs) / cpu_num)) - 0.5)
+        end_index = round((start_index + (len(relevant_docs) / cpu_num)) + 0.5)
+
+        #Create the smaller doc_list as a sub-list of the main relevant docs list
+        doc_list = relevant_docs[start_index:end_index]
+
+        #Call the pool for each documents sub-list
+        results.append(pool.apply_async(calc_angles, args=(doc_list, docs, inverted_index, query)))
+
+    #For each result, call .get() on it to wait for the results
+    for result in results:
+        angle_return = result.get()
+
+        #Copy the data from each angle_return dict into the main one
+        for docID in angle_return:
+            angle_dict[docID] = angle_return[docID]
+    
     #Print the document results
     #The dict is sorted so the most relevant docIDs are printed first
     for docID in sorted(angle_dict, key=angle_dict.__getitem__):
@@ -197,15 +242,24 @@ def process_queries(queries: str, inverted_index:dict, docs:str) -> None:
     @param docs - The documents to search through, as a string. Each document is separated by a newline
     """
 
+    #Define the pool object up here to reduce the overhead from constantly creating a new object
+    pool = Pool()
+
+    #Split the queries and docs by newline character
     queries = queries.splitlines()
     docs = docs.splitlines()
+
+    #Process each query serially
     for query in queries:
-        process_query(query, inverted_index, docs)
+        process_query(query, inverted_index, docs, pool)
+
+    #Close the pool object
+    pool.close()
 
 
 # Main
 if __name__ == "__main__":
-    docs = read_file("set3/docs.txt")
-    queries = read_file("set3/queries.txt")
+    docs = read_file("set1/docs.txt")
+    queries = read_file("set1/queries.txt")
     index = build_inverted_index(docs)
     process_queries(queries, index, docs)
