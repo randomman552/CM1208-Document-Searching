@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from multiprocessing import Pool, cpu_count
 from collections import OrderedDict
 import json
@@ -108,11 +109,13 @@ def build_inverted_index(docs: str) -> OrderedDict:
         for word in partial_index:
             inverted_index[word] = partial_index[word]
     
+    #Close multithreading pool
+    pool.close()
     #Return our result
     return inverted_index
 
 
-def process_query(query: str, inverted_index: dict, docs:str) -> None:
+def process_query(query: str, inverted_index: dict, docs:list) -> None:
     """
     Process a given query and print the results.\n
     1 - Print the query 'Query: {query}'\n
@@ -120,10 +123,71 @@ def process_query(query: str, inverted_index: dict, docs:str) -> None:
     3 - For each document in the list, print '{docID} {Angle compared to the search query}'\n
     @param query - The query to be searched: should be str.\n
     @param inverted_index - A dict contain the inverted index for the corpus.\n
-    @param docs - The documents to search through, as a string.
+    @param docs - The documents to search through, as a list of strings
     """
+    def build_vector(doc:str, inverted_index:dict) -> np.array:
+        """Build the vector for the given document.\n
+        @param doc - The document to build the array for.\n
+        @param inverted_index - The index to build it from."""
 
-    pass
+        temp_list = []
+        
+        #For each word in the index, append the count of that word in the document to the list
+        for word in inverted_index:
+            temp_list.append(doc.count(word))
+
+        #Turn the list into a vector
+        vector = np.array(temp_list)
+        return vector
+
+    print(f"Query: '{query}'")
+
+    #Split the query into a list of words to prevent crossover when using in operator
+    query_split = query.split()
+
+    #Use a set to store the relevant documents, to prevent any duplicates
+    #Starting set contains the ID of all documents in the docs list
+    relevant_docs = set([i for i in range(len(docs))])
+
+    #Attempt to intersection the current relevant_docs set with the set of the inverted index for the current word
+    #If it is not present in the inverted index, catch the raised NameError
+    for word in query_split:
+        try:
+            relevant_docs &= set(inverted_index[word])
+        except NameError:
+            pass
+
+    #Print the list or relevant documents in the right format
+    print("Relevant documents: '", end="")
+    #This line unpacks all the items from the list and prints them separated by whitespace.
+    print(*relevant_docs, sep=" ", end="'\n")
+
+    #Build the vector for the search query
+    query_vector = build_vector(query, inverted_index)
+    query_norm = np.linalg.norm(query_vector)
+
+    #Create a dict to store the angles in
+    angle_dict = dict()
+
+    #For each document, print its ID and the angle between it and the search query
+    for docID in relevant_docs:
+        vector = build_vector(docs[docID], inverted_index)
+        dot_product = np.dot(vector, query_vector)
+        norm = np.linalg.norm(vector)
+
+        #Calculate angle in radians
+        angle = math.acos(dot_product / (norm * query_norm))
+
+        #Convert to degrees
+        angle = math.degrees(angle)
+
+        #Append the angle to the list
+        angle_dict[docID] = angle
+
+    #Print the document results
+    #The dict is sorted so the most relevant docIDs are printed first
+    for docID in sorted(angle_dict, key=angle_dict.__getitem__):
+        print(f"{docID} {round(angle_dict[docID], 2)}°")
 
 def process_queries(queries: str, inverted_index:dict, docs:str) -> None:
     """
@@ -133,7 +197,10 @@ def process_queries(queries: str, inverted_index:dict, docs:str) -> None:
     @param docs - The documents to search through, as a string. Each document is separated by a newline
     """
 
-    pass
+    queries = queries.splitlines()
+    docs = docs.splitlines()
+    for query in queries:
+        process_query(query, inverted_index, docs)
 
 
 # Main
@@ -141,3 +208,4 @@ if __name__ == "__main__":
     docs = read_file("set3/docs.txt")
     queries = read_file("set3/queries.txt")
     index = build_inverted_index(docs)
+    process_queries(queries, index, docs)
