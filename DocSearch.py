@@ -298,6 +298,10 @@ def build_doc_dicts(docs: str) -> list:
     for i in range(len(docs)):
         docs[i] = build_doc_dict(docs[i].split())
 
+    # Add an empty document to the 0th element, so that the document list is indexed from 1.
+    # The empty starting dict at 0 has no impact on the queries as it won't be present in the inverted index anyway
+    docs = [dict()] + docs
+
     return docs
 
 
