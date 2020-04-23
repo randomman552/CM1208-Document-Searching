@@ -257,7 +257,7 @@ def process_query(query: str, inverted_index: dict, docs: list, pool: Pool) -> N
     # Print the document results
     # The dict is sorted so the most relevant docIDs are printed first
     for docID in sorted(angle_dict, key=angle_dict.__getitem__):
-        print(f"{docID} {round(angle_dict[docID], 5)}°")
+        print(f"{docID} {format(angle_dict[docID], '.5f')}")
 
 
 def process_queries(queries: str, inverted_index: dict, docs: str) -> None:
@@ -277,10 +277,7 @@ def process_queries(queries: str, inverted_index: dict, docs: str) -> None:
 
     # Process each query serially
     for query in queries:
-        query_start_time = time.time()
         process_query(query, inverted_index, docs, pool)
-        query_end_time = time.time()
-        print(f"Query took: {query_end_time - query_start_time}")
 
     # Close the pool object
     pool.close()
@@ -310,11 +307,8 @@ if __name__ == "__main__":
     # By default this program reads the docs.txt and queries.txt file in the same directory as it.
     docs = read_file("docs.txt")
     queries = read_file("queries.txt")
-    index_start_time = time.time()
     docs = build_doc_dicts(docs)
     corpus_dict = build_corpus_dict(docs)
     index = build_inverted_index(docs, corpus_dict)
-    index_end_time = time.time()
-    print(f"Built index in: {index_end_time - index_start_time}")
-    print(f"Index contains {len(index)} words")
+    print(f"Words in dictionary: {len(index)}")
     process_queries(queries, index, docs)
