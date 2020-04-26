@@ -1,8 +1,6 @@
 import numpy as np
 import math
 from multiprocessing import Pool, cpu_count
-import json
-import time
 
 
 def read_file(filepath: str) -> str:
@@ -200,7 +198,7 @@ def process_query(query: str, inverted_index: dict, docs: list, pool: Pool) -> N
     @param docs - The documents to search through, as a list of strings\n
     @param pool - A multhprocessing.Pool object, used to process angle calculation in parallel.
     """
-    print(f"Query: '{query}'")
+    print(f"Query: {query}")
 
     # Split the query into a list of words to prevent crossover when using in operator
     query_split = query.split()
@@ -218,9 +216,9 @@ def process_query(query: str, inverted_index: dict, docs: list, pool: Pool) -> N
             pass
 
     # Print the list or relevant documents in the right format
-    print("Relevant documents: '", end="")
+    print("Relevant documents: ", end="")
     # This line unpacks all the items from the list and prints them separated by whitespace.
-    print(*relevant_docs, sep=" ", end="'\n")
+    print(*relevant_docs, sep=" ", end="\n")
 
     # Initalise empty dict to store angles
     angle_dict = dict()
