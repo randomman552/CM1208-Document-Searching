@@ -212,7 +212,7 @@ def process_query(query: str, inverted_index: dict, docs: list, pool: Pool) -> N
     for word in query_split:
         try:
             relevant_docs.intersection_update(inverted_index[word])
-        except NameError:
+        except KeyError:
             pass
 
     # Print the list or relevant documents in the right format
